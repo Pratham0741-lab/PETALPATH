@@ -68,6 +68,33 @@ export default function AdminUploadPage() {
         if (selectedFile) setFile(selectedFile)
     }
 
+    const uploadToSignedUrl = (url: string, fileToUpload: File): Promise<void> => {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            xhr.open('PUT', url, true)
+            xhr.setRequestHeader('Content-Type', fileToUpload.type || 'video/mp4')
+            xhr.setRequestHeader('Cache-Control', '3600')
+            xhr.setRequestHeader('x-upsert', 'false')
+            
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const pct = Math.round(15 + (event.loaded / event.total) * 65)
+                    setProgress(pct)
+                }
+            }
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve()
+                } else {
+                    reject(new Error(`Upload failed (${xhr.status}): ${xhr.responseText}`))
+                }
+            }
+            xhr.onerror = () => reject(new Error('Network error during upload'))
+            xhr.ontimeout = () => reject(new Error('Upload timed out'))
+            xhr.send(fileToUpload)
+        })
+    }
+
     const handleUpload = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!file || !title) return
@@ -76,7 +103,7 @@ export default function AdminUploadPage() {
             const prefix = isShort ? 'short_' : ''
             const fileName = `${prefix}${Date.now()}_${file.name.replace(/\s+/g, '_')}`
             
-            setProgress(10)
+            setProgress(5)
             
             // 1. Get signed URL from API
             const resUrl = await fetch('/api/upload', {
@@ -90,27 +117,14 @@ export default function AdminUploadPage() {
                 throw new Error(errData.error || 'Failed to get upload URL')
             }
             
-            const { signedUrl, token, path } = await resUrl.json()
+            const { signedUrl } = await resUrl.json()
             
-            setProgress(20)
+            setProgress(15)
             
-            // 2. Upload file directly to Supabase Storage via fetch
-            const uploadRes = await fetch(signedUrl, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': file.type || 'video/mp4',
-                    'Cache-Control': '3600',
-                    'x-upsert': 'false',
-                },
-                body: file,
-            })
+            // 2. Upload file directly to Supabase via XHR (with real progress)
+            await uploadToSignedUrl(signedUrl, file)
             
-            if (!uploadRes.ok) {
-                const errText = await uploadRes.text().catch(() => 'Upload failed')
-                throw new Error(`Storage upload failed: ${errText}`)
-            }
-            
-            setProgress(80)
+            setProgress(85)
             
             // 3. Insert Database Record via API
             const resDb = await fetch('/api/upload', {
