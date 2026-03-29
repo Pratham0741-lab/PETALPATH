@@ -92,24 +92,33 @@ export default function AdminUploadPage() {
             
             const { signedUrl, token, path } = await resUrl.json()
             
-            setProgress(30)
+            setProgress(20)
             
-            // 2. Upload file directly to Supabase Storage using the signed URL
-            const { error: uploadError } = await supabase.storage
-                .from('videos')
-                .uploadToSignedUrl(path, token, file, { cacheControl: '3600', upsert: false })
-                
-            if (uploadError) throw uploadError
+            // 2. Upload file directly to Supabase Storage via fetch
+            const uploadRes = await fetch(signedUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': file.type || 'video/mp4',
+                    'Cache-Control': '3600',
+                    'x-upsert': 'false',
+                },
+                body: file,
+            })
+            
+            if (!uploadRes.ok) {
+                const errText = await uploadRes.text().catch(() => 'Upload failed')
+                throw new Error(`Storage upload failed: ${errText}`)
+            }
             
             setProgress(80)
             
-            // 3. Insert Database Record
+            // 3. Insert Database Record via API
             const resDb = await fetch('/api/upload', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'insertVideo',
-                    title, description, category, difficulty, language, path, isShort
+                    title, description, category, difficulty, language, path: fileName, isShort
                 })
             })
             
