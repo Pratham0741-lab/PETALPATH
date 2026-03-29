@@ -75,18 +75,55 @@ export default function AdminUploadPage() {
         try {
             const prefix = isShort ? 'short_' : ''
             const fileName = `${prefix}${Date.now()}_${file.name.replace(/\s+/g, '_')}`
-            const { error: uploadError } = await supabase.storage.from('videos').upload(fileName, file, { cacheControl: '3600', upsert: false })
+            
+            setProgress(10)
+            
+            // 1. Get signed URL from API
+            const resUrl = await fetch('/api/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'getSignedUrl', fileName })
+            })
+            
+            if (!resUrl.ok) {
+                const errData = await resUrl.json().catch(() => ({}))
+                throw new Error(errData.error || 'Failed to get upload URL')
+            }
+            
+            const { signedUrl, token, path } = await resUrl.json()
+            
+            setProgress(30)
+            
+            // 2. Upload file directly to Supabase Storage using the signed URL
+            const { error: uploadError } = await supabase.storage
+                .from('videos')
+                .uploadToSignedUrl(path, token, file, { cacheControl: '3600', upsert: false })
+                
             if (uploadError) throw uploadError
-            setProgress(60)
-            const { data: { publicUrl } } = supabase.storage.from('videos').getPublicUrl(fileName)
+            
             setProgress(80)
-            const tags = isShort ? ['short'] : []
-            const { error: dbError } = await supabase.from('videos').insert({ title, description, category, difficulty, language, video_url: publicUrl, is_published: false, created_by: user?.id, tags })
-            if (dbError) throw dbError
+            
+            // 3. Insert Database Record
+            const resDb = await fetch('/api/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'insertVideo',
+                    title, description, category, difficulty, language, path, isShort
+                })
+            })
+            
+            if (!resDb.ok) {
+                const errData = await resDb.json().catch(() => ({}))
+                throw new Error(errData.error || 'Failed to save video details')
+            }
+            
             setProgress(100); setSuccess(true); setTitle(''); setDescription(''); setFile(null)
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : 'Upload failed')
-        } finally { setUploading(false) }
+        } finally { 
+            setUploading(false) 
+        }
     }
 
     const resetForm = () => { setSuccess(false); setError(''); setProgress(0); setTitle(''); setDescription(''); setFile(null) }

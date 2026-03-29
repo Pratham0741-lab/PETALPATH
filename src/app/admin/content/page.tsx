@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { createClient } from '@/lib/supabase'
 import type { Video } from '@/lib/types'
 import { VideoIcon } from '@/components/ui/PetalIcons'
 
@@ -23,20 +22,36 @@ export default function AdminContentPage() {
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<ContentFilter>('all')
     const [searchQuery, setSearchQuery] = useState('')
-    const supabase = createClient()
 
     useEffect(() => { fetchVideos() }, [])
 
     const fetchVideos = async () => {
         setLoading(true)
-        const { data } = await supabase.from('videos').select('*').order('created_at', { ascending: false })
-        if (data) setVideos(data as Video[])
+        try {
+            const res = await fetch('/api/admin/videos')
+            if (res.ok) {
+                const { videos: data } = await res.json()
+                setVideos(data as Video[])
+            }
+        } catch (e) {
+            console.error('Failed to fetch videos:', e)
+        }
         setLoading(false)
     }
 
     const togglePublish = async (video: Video) => {
-        const { error } = await supabase.from('videos').update({ is_published: !video.is_published }).eq('id', video.id)
-        if (!error) setVideos(videos.map(v => v.id === video.id ? { ...v, is_published: !v.is_published } : v))
+        try {
+            const res = await fetch('/api/admin/videos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: video.id, is_published: !video.is_published })
+            })
+            if (res.ok) {
+                setVideos(videos.map(v => v.id === video.id ? { ...v, is_published: !v.is_published } : v))
+            }
+        } catch (e) {
+            console.error('Failed to toggle publish:', e)
+        }
     }
 
     const deleteVideo = async (video: Video) => {

@@ -1,59 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabase } from '@/lib/supabase-server'
+import { createServerSupabase, createServiceClient } from '@/lib/supabase-server'
 
 export async function POST(request: NextRequest) {
-    const supabase = await createServerSupabase()
+    try {
+        const supabase = await createServerSupabase()
+        const { data: { user } } = await supabase.auth.getUser()
 
-    const formData = await request.formData()
-    const file = formData.get('file') as File
-    const title = formData.get('title') as string
-    const category = formData.get('category') as string || 'language'
-    const difficulty = formData.get('difficulty') as string || 'easy'
-    const language = formData.get('language') as string || 'en'
-    const description = formData.get('description') as string || ''
+        if (!user || user.user_metadata?.role !== 'admin') {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
 
-    if (!file || !title) {
-        return NextResponse.json({ error: 'file and title required' }, { status: 400 })
+        const adminSupabase = createServiceClient()
+        
+        const body = await request.json()
+        const { action } = body
+
+        if (action === 'getSignedUrl') {
+            const { fileName } = body
+            const { data, error } = await adminSupabase.storage
+                .from('videos')
+                .createSignedUploadUrl(fileName)
+                
+            if (error) throw error
+            return NextResponse.json(data)
+        }
+
+        if (action === 'insertVideo') {
+            const { title, description, category, difficulty, language, path, isShort } = body
+            const { data: { publicUrl } } = adminSupabase.storage.from('videos').getPublicUrl(path)
+            
+            const tags = isShort ? ['short'] : []
+            const { data, error } = await adminSupabase.from('videos').insert({
+                title, 
+                description, 
+                category, 
+                difficulty, 
+                language,
+                video_url: publicUrl,
+                is_published: false,
+                created_by: user.id,
+                tags
+            }).select().single()
+
+            if (error) throw error
+            return NextResponse.json({ video: data })
+        }
+
+        return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
     }
-
-    // Upload to Supabase Storage
-    const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`
-    const buffer = Buffer.from(await file.arrayBuffer())
-
-    const { error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, buffer, {
-            contentType: file.type,
-            cacheControl: '3600',
-        })
-
-    if (uploadError) {
-        return NextResponse.json({ error: uploadError.message }, { status: 500 })
-    }
-
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName)
-
-    // Insert database record
-    const { data, error: dbError } = await supabase
-        .from('videos')
-        .insert({
-            title,
-            description,
-            category,
-            difficulty,
-            language,
-            video_url: publicUrl,
-            is_published: false,
-        })
-        .select()
-        .single()
-
-    if (dbError) {
-        return NextResponse.json({ error: dbError.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ video: data })
 }
