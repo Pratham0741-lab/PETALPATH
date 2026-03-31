@@ -98,7 +98,7 @@ export default function ChildDashboard() {
                     whileTap={{ scale: 0.95 }}
                     onClick={async () => {
                         await signOut()
-                        router.push('/login')
+                        window.location.href = '/login'
                     }}
                     className="h-14 px-5 rounded-2xl bg-white/90 backdrop-blur-xl flex items-center gap-3 shadow-lg border border-white/50 cursor-pointer group transition-all hover:bg-white"
                 >

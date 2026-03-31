@@ -121,6 +121,13 @@ export function AuthProvider({ children: childrenProp }: { children: React.React
         setSession(null)
         setChildProfiles([])
         setActiveChild(null)
+        // Clear all Supabase auth cookies so middleware doesn't redirect back
+        document.cookie.split(';').forEach((c) => {
+            const name = c.trim().split('=')[0]
+            if (name.startsWith('sb-')) {
+                document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
+            }
+        })
     }
 
     return (
