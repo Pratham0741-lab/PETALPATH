@@ -9,7 +9,7 @@ export async function GET() {
 
     const { data, error } = await supabase
         .from('videos')
-        .select('id, title, video_url, category, difficulty')
+        .select('id, title, video_url, thumbnail_url, category, difficulty, tags, duration')
         .eq('is_published', true)
         .limit(10)
 
