@@ -115,19 +115,19 @@ export function AuthProvider({ children: childrenProp }: { children: React.React
     }
 
     const signOut = async () => {
-        await supabase.auth.signOut()
+        // Clear local state immediately
         setUser(null)
         setProfile(null)
         setSession(null)
         setChildProfiles([])
         setActiveChild(null)
-        // Clear all Supabase auth cookies so middleware doesn't redirect back
-        document.cookie.split(';').forEach((c) => {
-            const name = c.trim().split('=')[0]
-            if (name.startsWith('sb-')) {
-                document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`
-            }
-        })
+        // Navigate to server-side signout route — it clears cookies in the
+        // response and redirects to /login, avoiding the middleware race condition
+        // where stale cookies would redirect the user back to the dashboard.
+        // Important: do NOT call supabase.auth.signOut() here — that would clear
+        // cookies before the navigation, causing middleware to see no user and
+        // potentially redirect before the API route can execute.
+        window.location.href = '/api/auth/signout'
     }
 
     return (

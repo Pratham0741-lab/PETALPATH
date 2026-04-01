@@ -3,6 +3,17 @@ export type DifficultyLevel = 'easy' | 'medium' | 'hard'
 export type ActivityType = 'video' | 'speaking' | 'camera' | 'physical'
 export type VideoCategory = 'language' | 'math' | 'science' | 'art' | 'music' | 'social' | 'motor_skills'
 
+// ─── Curriculum Engine Types ───
+export type CurriculumDomain = 'numbers' | 'alphabet' | 'phonics' | 'shapes' | 'general'
+export type CurriculumStage = 'foundation' | 'understanding' | 'application'
+export type NextVideoReason =
+    | 'weak_topic_reinforcement'
+    | 'phonics_continuation'
+    | 'reinforcement_session'
+    | 'domain_progression'
+    | 'next_in_path'
+    | 'first_video'
+
 export interface Profile {
     id: string
     email: string
@@ -44,6 +55,10 @@ export interface Video {
     created_by?: string
     created_at: string
     updated_at: string
+    // Curriculum fields
+    domain?: CurriculumDomain
+    stage?: CurriculumStage
+    learning_order?: number
 }
 
 export interface Activity {

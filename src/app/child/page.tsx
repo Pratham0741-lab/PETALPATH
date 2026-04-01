@@ -4,10 +4,16 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import MascotGuide from '@/components/child/MascotGuide'
 import CelebrationOverlay from '@/components/child/CelebrationOverlay'
 import LearningPlayground from '@/components/child/LearningPlayground'
 import { VideoIcon, MicIcon, CameraIcon, RunIcon, ExploreIcon, StarIcon, PetalFlower, ArrowBackIcon, SparkleIcon, ButterflyIcon } from '@/components/ui/PetalIcons'
+
+const DOMAIN_COLORS: Record<string, { gradient: string; color: string; emoji: string }> = {
+    numbers: { gradient: 'linear-gradient(135deg, #34D399, #10B981)', color: '#34D399', emoji: '🌲' },
+    alphabet: { gradient: 'linear-gradient(135deg, #60A5FA, #3B82F6)', color: '#60A5FA', emoji: '🏔' },
+    phonics: { gradient: 'linear-gradient(135deg, #F472B6, #EC4899)', color: '#F472B6', emoji: '🔊' },
+    shapes: { gradient: 'linear-gradient(135deg, #FBBF24, #F59E0B)', color: '#FBBF24', emoji: '🔺' },
+}
 
 const MENU_ITEMS = [
     { id: 'session', Icon: VideoIcon, label: 'Watch & Learn', gradient: 'linear-gradient(135deg, #3B82F6, #06B6D4)', shadow: 'rgba(59,130,246,0.4)', href: '/child/session' },
@@ -18,6 +24,15 @@ const MENU_ITEMS = [
     { id: 'reward', Icon: StarIcon, label: 'My Rewards', gradient: 'linear-gradient(135deg, #EAB308, #F59E0B)', shadow: 'rgba(234,179,8,0.4)', href: '#' },
 ]
 
+interface ContinueLearning {
+    domain: string
+    title: string
+    next_video_title: string | null
+    completed: number
+    total: number
+    percentage: number
+}
+
 export default function ChildDashboard() {
     const router = useRouter()
     const { signOut } = useAuth()
@@ -25,6 +40,7 @@ export default function ChildDashboard() {
     const [childAvatar, setChildAvatar] = useState('🧒')
     const [showCelebration, setShowCelebration] = useState(false)
     const [stars, setStars] = useState(0)
+    const [continueLearning, setContinueLearning] = useState<ContinueLearning | null>(null)
 
     useEffect(() => {
         const name = sessionStorage.getItem('activeChildName')
@@ -36,6 +52,24 @@ export default function ChildDashboard() {
         if (childId) {
             const savedStars = localStorage.getItem(`stars_${childId}`)
             if (savedStars) setStars(parseInt(savedStars))
+
+            // Fetch curriculum progress for "Continue Learning" card
+            fetch(`/api/curriculum-progress?child_id=${childId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.domains && data.domains.length > 0) {
+                        // Find the domain with most recent progress (has completions but not finished)
+                        const active = data.domains
+                            .filter((d: ContinueLearning & { unlocked: boolean }) => d.unlocked && d.next_video_title && d.completed > 0)
+                            .sort((a: ContinueLearning, b: ContinueLearning) => b.percentage - a.percentage)[0]
+
+                        // If no active, find first unlocked with content
+                        const firstUnlocked = data.domains.find((d: ContinueLearning & { unlocked: boolean }) => d.unlocked && d.next_video_title)
+
+                        setContinueLearning(active || firstUnlocked || null)
+                    }
+                })
+                .catch(console.error)
         }
     }, [])
 
@@ -46,6 +80,10 @@ export default function ChildDashboard() {
         }
         router.push(item.href)
     }
+
+    const domainStyle = continueLearning?.domain
+        ? DOMAIN_COLORS[continueLearning.domain]
+        : null
 
     return (
         <main className="min-h-screen safe-area flex flex-col relative overflow-hidden bg-transparent">
@@ -60,7 +98,7 @@ export default function ChildDashboard() {
                     message={`You have ${stars} stars!`}
                 />
 
-            {/* High-contrast vibrant ambient particles */}
+            {/* Ambient particles */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden xl:block hidden">
                 {[
                     { Icon: SparkleIcon, color: '#3B82F6', x: 10, y: 20 },
@@ -91,15 +129,12 @@ export default function ChildDashboard() {
                 ))}
             </div>
 
-            {/* Top Navigation Bar - Full Width Desktop */}
+            {/* Top Navigation Bar */}
             <div className="relative z-20 w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
                 <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={async () => {
-                        await signOut()
-                        window.location.href = '/login'
-                    }}
+                    onClick={() => signOut()}
                     className="h-14 px-5 rounded-2xl bg-white/90 backdrop-blur-xl flex items-center gap-3 shadow-lg border border-white/50 cursor-pointer group transition-all hover:bg-white"
                 >
                     <ArrowBackIcon size={24} color="#64748B" />
@@ -119,11 +154,11 @@ export default function ChildDashboard() {
                 </motion.div>
             </div>
 
-            {/* Main Content Area - Desktop Optimized layout */}
+            {/* Main Content Area */}
             <div className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-6 pb-12 flex flex-col items-center">
-                
+
                 {/* Hero / Welcome Section */}
-                <div className="flex flex-col items-center mb-12 mt-4 text-center">
+                <div className="flex flex-col items-center mb-8 mt-4 text-center">
                     <motion.div
                         initial={{ scale: 0, rotate: -180 }}
                         animate={{ scale: 1, rotate: 0 }}
@@ -135,7 +170,7 @@ export default function ChildDashboard() {
                             <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/50 to-white/0 animate-shimmer pointer-events-none" style={{ backgroundSize: '200% 100%' }} />
                         </div>
                     </motion.div>
-                    
+
                     <motion.h1
                         initial={{ y: 20, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
@@ -154,7 +189,65 @@ export default function ChildDashboard() {
                     </motion.p>
                 </div>
 
-                {/* Activity Grid - Wide Website Layout (3 columns on desktop) */}
+                {/* ─── Continue Learning Card (NEW) ─── */}
+                {continueLearning && domainStyle && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                        className="w-full max-w-2xl mb-8"
+                    >
+                        <motion.button
+                            whileHover={{ scale: 1.02, y: -4 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => router.push(`/child/session?domain=${continueLearning.domain}`)}
+                            className="w-full bg-white/80 backdrop-blur-xl rounded-[2rem] p-6 shadow-xl border border-white cursor-pointer group overflow-hidden relative text-left"
+                        >
+                            {/* Background gradient glow */}
+                            <div className="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity duration-500 rounded-[2rem]" style={{ background: domainStyle.gradient }} />
+
+                            <div className="flex items-center gap-5 relative z-10">
+                                {/* Domain icon */}
+                                <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-md text-3xl flex-shrink-0"
+                                    style={{ background: domainStyle.gradient }}
+                                >
+                                    {domainStyle.emoji}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: domainStyle.color }}>
+                                        Continue Learning
+                                    </p>
+                                    <h3 className="text-lg font-black text-slate-800 truncate">
+                                        {continueLearning.next_video_title || continueLearning.title}
+                                    </h3>
+                                    <div className="flex items-center gap-3 mt-2">
+                                        <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                                            <div
+                                                className="h-full rounded-full transition-all duration-700"
+                                                style={{ width: `${continueLearning.percentage}%`, background: domainStyle.color }}
+                                            />
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-400">
+                                            {continueLearning.completed}/{continueLearning.total}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Play arrow */}
+                                <div className="w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg flex-shrink-0 group-hover:scale-110 transition-transform"
+                                    style={{ background: domainStyle.gradient }}
+                                >
+                                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                        <path d="M5 3L17 10L5 17V3Z" fill="white" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </motion.button>
+                    </motion.div>
+                )}
+
+                {/* Activity Grid */}
                 <div className="w-full">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                         {MENU_ITEMS.map((item, i) => (
@@ -173,25 +266,22 @@ export default function ChildDashboard() {
                                 onClick={() => handleMenuClick(item)}
                                 className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] p-8 flex flex-col items-center justify-center gap-6 cursor-pointer shadow-xl border border-white transition-all group overflow-hidden relative"
                             >
-                                {/* High-contrast Gradient Icon container */}
                                 <div className="w-28 h-28 rounded-full flex items-center justify-center shadow-inner relative z-10 transition-transform duration-300 group-hover:scale-110" style={{ background: item.gradient }}>
                                     <item.Icon size={56} color="white" />
-                                    {/* Shimmer inside icon */}
                                     <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/0 via-white/30 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                                 </div>
-                                
+
                                 <h3 className="text-2xl md:text-3xl font-black text-slate-800 relative z-10">
                                     {item.label}
                                 </h3>
 
-                                {/* Card Background Hover Glow */}
                                 <div className="absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-500 rounded-[2.5rem]" style={{ background: item.gradient }} />
                             </motion.button>
                         ))}
                     </div>
                 </div>
 
-                {/* Bottom Mascot Tip - Desktop style */}
+                {/* Bottom Mascot Tip */}
                 <motion.div
                     initial={{ y: 30, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
@@ -204,7 +294,10 @@ export default function ChildDashboard() {
                     <div>
                         <h4 className="font-bold text-slate-700 text-lg mb-1">Tip from Petal!</h4>
                         <p className="text-base text-slate-600 font-medium">
-                            Click any large block above to start your adventure. Every activity gives you shining stars!
+                            {continueLearning
+                                ? `Great progress! You\'re exploring ${continueLearning.title}. Keep going to earn more stars!`
+                                : 'Click any large block above to start your adventure. Every activity gives you shining stars!'
+                            }
                         </p>
                     </div>
                 </motion.div>

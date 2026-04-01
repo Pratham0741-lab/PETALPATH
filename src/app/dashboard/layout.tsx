@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                             <span className="text-sm text-gray-500 hidden sm:inline">{profile?.full_name || profile?.email}</span>
                             <motion.button
                                 whileTap={{ scale: 0.95 }}
-                                onClick={async () => { await signOut(); window.location.href = '/login' }}
+                                onClick={() => signOut()}
                                 className="px-4 py-2 rounded-xl bg-gray-100 text-sm font-semibold text-gray-600 hover:bg-gray-200 transition-colors cursor-pointer"
                             >
                                 Sign Out

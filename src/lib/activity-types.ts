@@ -134,4 +134,8 @@ export interface VideoWithTags {
     difficulty: string
     tags: string[]
     duration?: number
+    // Curriculum fields
+    domain?: string
+    stage?: string
+    learning_order?: number
 }

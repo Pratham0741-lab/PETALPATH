@@ -1,11 +1,16 @@
 import type { AdaptiveLearningSignal, DifficultyLevel, Video } from './types'
+import type { CurriculumDomain, CurriculumStage } from './types'
 
 /**
  * Adaptive Learning Engine
  * Analyzes child performance signals and recommends personalized content.
+ *
+ * This engine is designed to be "ML-ready": the current implementation uses
+ * rule-based heuristics, but the interfaces are structured so that an ML model
+ * can be plugged in by implementing the RecommendationProvider interface.
  */
 
-interface EngagementProfile {
+export interface EngagementProfile {
     averageVideoCompletion: number
     averageAccuracy: number
     averageEngagement: number
@@ -13,6 +18,30 @@ interface EngagementProfile {
     strongActivities: string[]
     weakActivities: string[]
     totalSessions: number
+}
+
+/**
+ * ML-Ready Hook: Implement this interface to plug in a model-based recommender.
+ * The curriculum engine will call `getRecommendation()` if a provider is registered.
+ */
+export interface RecommendationProvider {
+    getRecommendation(
+        profile: EngagementProfile,
+        domain: CurriculumDomain,
+        stage: CurriculumStage,
+        history: string[]  // video IDs
+    ): Promise<{ videoId: string; confidence: number } | null>
+}
+
+// Global slot for future ML provider
+let _recommendationProvider: RecommendationProvider | null = null
+
+export function registerRecommendationProvider(provider: RecommendationProvider) {
+    _recommendationProvider = provider
+}
+
+export function getRecommendationProvider(): RecommendationProvider | null {
+    return _recommendationProvider
 }
 
 /**
@@ -83,11 +112,33 @@ export function recommendDifficulty(signals: AdaptiveLearningSignal[]): Difficul
 }
 
 /**
+ * Get curriculum-adjusted difficulty.
+ * Factors in both the child's performance AND the current curriculum stage.
+ * Foundation stage caps at 'medium', understanding allows 'hard'.
+ */
+export function getCurriculumAdjustedDifficulty(
+    signals: AdaptiveLearningSignal[],
+    stage: CurriculumStage
+): DifficultyLevel {
+    const baseDifficulty = recommendDifficulty(signals)
+
+    // Foundation stage: cap at medium to prevent overwhelming kids
+    if (stage === 'foundation') {
+        return baseDifficulty === 'hard' ? 'medium' : baseDifficulty
+    }
+
+    return baseDifficulty
+}
+
+/**
  * Reorder videos based on child's engagement profile
  * Prioritizes:
  * 1. Videos matching recommended difficulty
  * 2. Categories the child is weak in (to improve)
  * 3. New content (not recently viewed)
+ *
+ * NOTE: This is ONLY used within a single domain.
+ * Cross-domain ordering is handled by the curriculum-validator.
  */
 export function reorderContent(
     videos: Video[],
@@ -112,8 +163,8 @@ export function reorderContent(
         // Prefer unseen content
         if (!viewedVideoIds.includes(video.id)) score += 25
 
-        // Small random factor for variety
-        score += Math.random() * 10
+        // Deterministic tiebreaker using learning_order (NOT random)
+        score += ((video as Video & { learning_order?: number }).learning_order || 0) * 0.01
 
         return { video, score }
     })
@@ -136,3 +187,20 @@ export function calculateReadinessScore(signals: AdaptiveLearningSignal[]): numb
     // Weighted score
     return Math.round(avgAccuracy * 0.4 + avgCompletion * 0.3 + avgEngagement * 0.3)
 }
+
+/**
+ * Check if a child is ready to advance to the next domain.
+ * Requires minimum completion + adequate readiness score.
+ */
+export function shouldAdvanceDomain(
+    signals: AdaptiveLearningSignal[],
+    completionPercentage: number,
+    minCompletion: number = 50
+): boolean {
+    if (completionPercentage < minCompletion) return false
+
+    const readiness = calculateReadinessScore(signals)
+    // Require at least 60% readiness to move forward
+    return readiness >= 60
+}
+

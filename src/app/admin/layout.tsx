@@ -33,7 +33,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             <span className="text-sm text-gray-400 hidden sm:block">{profile?.email}</span>
                             <motion.button
                                 whileTap={{ scale: 0.95 }}
-                                onClick={async () => { await signOut(); window.location.href = '/login' }}
+                                onClick={() => signOut()}
                                 className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 hover:bg-white/10 transition-colors"
                             >
                                 Sign Out

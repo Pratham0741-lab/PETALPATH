@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
     const path = request.nextUrl.pathname
 
     // Public routes
-    const publicRoutes = ['/login', '/signup', '/']
+    const publicRoutes = ['/login', '/signup', '/', '/api/auth/signout']
     const isPublicRoute = publicRoutes.some(route =>
         path === route || path.startsWith('/login/') || path.startsWith('/signup/')
     )
@@ -62,8 +62,8 @@ export async function middleware(request: NextRequest) {
             return NextResponse.redirect(url)
         }
 
-        // Redirect logged-in users away from login pages
-        if (isPublicRoute && path !== '/') {
+        // Redirect logged-in users away from login pages (but not from signout route)
+        if (isPublicRoute && path !== '/' && path !== '/api/auth/signout') {
             const url = request.nextUrl.clone()
             if (role === 'admin') url.pathname = '/admin'
             else if (role === 'parent') url.pathname = '/dashboard'

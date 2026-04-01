@@ -1,18 +1,55 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useRouter, useSearchParams } from 'next/navigation'
 import VideoPlayer from '@/components/child/VideoPlayer'
 import ActivityEngine from '@/components/child/ActivityEngine'
 import PhysicalActivity from '@/components/child/PhysicalActivity'
-import MascotGuide from '@/components/child/MascotGuide'
 import CelebrationOverlay from '@/components/child/CelebrationOverlay'
 import LearningPlayground from '@/components/child/LearningPlayground'
 import type { VideoWithTags, TopicResult } from '@/lib/activity-types'
+import type { ReinforcementActivity } from '@/lib/reinforcement-engine'
 import { VideoIcon, TrophyIcon, StarIcon, PetalFlower, ArrowBackIcon, SparkleIcon } from '@/components/ui/PetalIcons'
 
-type SessionPhase = 'loading' | 'video' | 'activities' | 'bonus' | 'complete'
+type SessionPhase = 'loading' | 'video' | 'activities' | 'reinforcement' | 'bonus' | 'complete'
+
+interface CurriculumMeta {
+    reason: string
+    progress: {
+        current_domain: string
+        videos_in_domain: number
+        completed_in_domain: number
+        current_topic: string
+        current_learning_topic?: string
+        stage?: string
+        percentage: number
+    }
+    reinforcement?: ReinforcementActivity | null
+}
+
+const DOMAIN_LABELS: Record<string, { name: string; emoji: string; color: string }> = {
+    numbers: { name: 'Number Forest', emoji: '🌲', color: '#34D399' },
+    alphabet: { name: 'Alphabet Mountain', emoji: '🏔', color: '#60A5FA' },
+    phonics: { name: 'Phonics Valley', emoji: '🔊', color: '#F472B6' },
+    shapes: { name: 'Shape Island', emoji: '🔺', color: '#FBBF24' },
+}
+
+const STAGE_LABELS: Record<string, { name: string; emoji: string; color: string }> = {
+    foundation: { name: 'Foundation', emoji: '🌱', color: '#34D399' },
+    understanding: { name: 'Understanding', emoji: '🧠', color: '#60A5FA' },
+    application: { name: 'Application', emoji: '🚀', color: '#F472B6' },
+}
+
+const REASON_LABELS: Record<string, string> = {
+    first_video: 'Starting your journey!',
+    next_in_path: 'Up next in your path',
+    phonics_continuation: 'Now learn the sound!',
+    reinforcement_session: 'Quick review time!',
+    domain_progression: 'New adventure ahead!',
+    weak_topic_reinforcement: 'Let\'s practice this again!',
+    domain_locked: 'Keep learning to unlock!',
+}
 
 function SessionContent() {
     const router = useRouter()
@@ -23,44 +60,69 @@ function SessionContent() {
     const [activityResults, setActivityResults] = useState<TopicResult[]>([])
     const [showCelebration, setShowCelebration] = useState(false)
     const [childId, setChildId] = useState<string>('')
+    const [curriculumMeta, setCurriculumMeta] = useState<CurriculumMeta | null>(null)
+    const [reinforcement, setReinforcement] = useState<ReinforcementActivity | null>(null)
+    const [videosWatchedInSession, setVideosWatchedInSession] = useState(0)
 
-    // Load video and child data
+    // ─── Load first video via curriculum engine (NO RANDOMNESS) ───
     useEffect(() => {
         const id = sessionStorage.getItem('activeChildId') || ''
         setChildId(id)
 
-        async function load() {
+        async function loadFirstVideo() {
             try {
-                // Fetch video with tags
-                const videoRes = await fetch('/api/videos')
-                const videoJson = await videoRes.json()
+                const domain = searchParams?.get('domain') || undefined
+                const videoId = searchParams?.get('video_id') || undefined
 
-                if (videoJson.videos && videoJson.videos.length > 0) {
-                    // Pick a random published video
-                    const vids = videoJson.videos.filter((v: any) => v.tags && v.tags.length > 0)
-                    const selected = vids.length > 0
-                        ? vids[Math.floor(Math.random() * vids.length)]
-                        : videoJson.videos[Math.floor(Math.random() * videoJson.videos.length)]
+                // If a specific video_id is passed (from Explore Map)
+                if (videoId) {
+                    const videoRes = await fetch('/api/videos')
+                    const videoJson = await videoRes.json()
+                    const found = videoJson.videos?.find((v: VideoWithTags) => v.id === videoId)
+                    if (found) {
+                        setVideo(found)
+                        setSessionPhase('video')
+                        return
+                    }
+                }
 
+                // Use the curriculum engine to get the first video
+                const res = await fetch('/api/next-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        child_id: id,
+                        domain: domain || undefined,
+                    }),
+                })
+                const data = await res.json()
+
+                if (data.next_video) {
                     setVideo({
-                        id: selected.id,
-                        title: selected.title,
-                        video_url: selected.video_url,
-                        thumbnail_url: selected.thumbnail_url,
-                        category: selected.category,
-                        difficulty: selected.difficulty,
-                        tags: selected.tags || [],
-                        duration: selected.duration,
+                        id: data.next_video.id,
+                        title: data.next_video.title,
+                        video_url: data.next_video.video_url,
+                        thumbnail_url: data.next_video.thumbnail_url,
+                        category: data.next_video.category || '',
+                        difficulty: data.next_video.difficulty || 'easy',
+                        tags: data.next_video.tags || [],
+                        duration: data.next_video.duration,
+                        domain: data.next_video.domain,
+                        stage: data.next_video.stage,
+                        learning_order: data.next_video.learning_order,
+                    })
+                    setCurriculumMeta({
+                        reason: data.reason,
+                        progress: data.progress,
+                        reinforcement: data.reinforcement,
                     })
                 }
 
-                // Fetch weak topics for this child
+                // Fetch weak topics
                 if (id) {
                     const weakRes = await fetch(`/api/activity-results?child_id=${id}&status=weak`)
                     const weakJson = await weakRes.json()
-                    if (weakJson.weakTopics) {
-                        setWeakTopics(weakJson.weakTopics)
-                    }
+                    if (weakJson.weakTopics) setWeakTopics(weakJson.weakTopics)
                 }
 
                 setSessionPhase('video')
@@ -70,15 +132,69 @@ function SessionContent() {
             }
         }
 
-        load()
+        loadFirstVideo()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    // ─── Fetch NEXT video from curriculum engine ───
+    const loadNextVideo = useCallback(async () => {
+        if (!video || !childId) return
+
+        try {
+            const res = await fetch('/api/next-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_video_id: video.id,
+                    child_id: childId,
+                }),
+            })
+            const data = await res.json()
+
+            if (data.next_video) {
+                setVideo({
+                    id: data.next_video.id,
+                    title: data.next_video.title,
+                    video_url: data.next_video.video_url,
+                    thumbnail_url: data.next_video.thumbnail_url,
+                    category: data.next_video.category || '',
+                    difficulty: data.next_video.difficulty || 'easy',
+                    tags: data.next_video.tags || [],
+                    duration: data.next_video.duration,
+                    domain: data.next_video.domain,
+                    stage: data.next_video.stage,
+                    learning_order: data.next_video.learning_order,
+                })
+                setCurriculumMeta({
+                    reason: data.reason,
+                    progress: data.progress,
+                    reinforcement: data.reinforcement,
+                })
+
+                // If reinforcement is needed, show it before the video
+                if (data.reason === 'reinforcement_session' && data.reinforcement) {
+                    setReinforcement(data.reinforcement)
+                    setSessionPhase('reinforcement')
+                } else {
+                    setSessionPhase('video')
+                }
+
+                setVideosWatchedInSession(prev => prev + 1)
+            } else {
+                // No more videos — complete the session
+                setSessionPhase('complete')
+            }
+        } catch (err) {
+            console.error('Failed to load next video:', err)
+            setSessionPhase('complete')
+        }
+    }, [video, childId])
 
     // Handle video completion → start activity engine
     const handleVideoComplete = useCallback(() => {
         if (video && video.tags && video.tags.length > 0) {
             setSessionPhase('activities')
         } else {
-            // No tags → skip to bonus activity
             setSessionPhase('bonus')
         }
     }, [video])
@@ -87,7 +203,6 @@ function SessionContent() {
     const handleActivitiesComplete = useCallback((results: TopicResult[]) => {
         setActivityResults(results)
 
-        // Also save progress record
         if (childId) {
             const avgScore = results.length > 0
                 ? results.reduce((sum, r) => sum + r.decision.finalScore, 0) / results.length
@@ -105,26 +220,26 @@ function SessionContent() {
                     metadata: {
                         topics: results.map(r => r.topic),
                         decisions: results.map(r => r.decision.decision),
+                        domain: video?.domain,
+                        stage: video?.stage,
                     },
                 }),
             }).catch(console.error)
         }
 
-        // Move to bonus round
         setSessionPhase('bonus')
-    }, [childId])
+    }, [childId, video])
 
     // Handle replay video
     const handleReplayVideo = useCallback(() => {
         setSessionPhase('video')
     }, [])
 
-    // Handle bonus/physical complete
+    // Handle bonus/physical complete → load NEXT video
     const handleBonusComplete = useCallback(() => {
-        // Award stars
         if (childId) {
             const strongCount = activityResults.filter(r => r.status === 'strong').length
-            const stars = 3 + strongCount * 2 // Base 3 + bonus per topic
+            const stars = 3 + strongCount * 2
             const current = parseInt(localStorage.getItem(`stars_${childId}`) || '0')
             localStorage.setItem(`stars_${childId}`, (current + stars).toString())
         }
@@ -132,9 +247,20 @@ function SessionContent() {
         setShowCelebration(true)
         setTimeout(() => {
             setShowCelebration(false)
-            setSessionPhase('complete')
+            // Instead of going to complete, load the NEXT video
+            loadNextVideo()
         }, 3500)
-    }, [childId, activityResults])
+    }, [childId, activityResults, loadNextVideo])
+
+    // Handle reinforcement activity complete
+    const handleReinforcementComplete = useCallback(() => {
+        setReinforcement(null)
+        setSessionPhase('video')
+    }, [])
+
+    // ─── Domain Info Bar ───
+    const domainInfo = video?.domain ? DOMAIN_LABELS[video.domain] : null
+    const reasonLabel = curriculumMeta?.reason ? REASON_LABELS[curriculumMeta.reason] || '' : ''
 
     // ─── Loading ───
     if (sessionPhase === 'loading') {
@@ -148,13 +274,13 @@ function SessionContent() {
                     >
                         <PetalFlower size={56} />
                     </motion.div>
-                    <p className="text-lg font-bold text-slate-500">Preparing your session...</p>
+                    <p className="text-lg font-bold text-slate-500">Preparing your learning journey...</p>
                 </div>
             </main>
         )
     }
 
-    // ─── Complete ───
+    // ─── Complete (all videos done) ───
     if (sessionPhase === 'complete') {
         const strongCount = activityResults.filter(r => r.status === 'strong').length
         const totalStars = 3 + strongCount * 2
@@ -183,20 +309,33 @@ function SessionContent() {
                     transition={{ delay: 0.3 }}
                     className="text-3xl font-black text-slate-800 mb-3 z-20"
                 >
-                    All Done!
+                    Amazing Journey! 🌟
                 </motion.h1>
 
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.5 }}
-                    className="flex items-center gap-2 text-slate-500 text-center mb-4 font-medium z-20"
+                    className="flex items-center gap-2 text-slate-500 text-center mb-2 font-medium z-20"
                 >
-                    <span>You earned {totalStars} stars!</span>
+                    <span>You watched {videosWatchedInSession} videos and earned {totalStars} stars!</span>
                     <StarIcon size={22} />
                 </motion.div>
 
-                {/* Results summary */}
+                {/* Progress Summary */}
+                {curriculumMeta?.progress && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 }}
+                        className="bg-white/80 backdrop-blur-xl rounded-2xl px-6 py-3 shadow-lg border border-white/50 mb-6 z-20"
+                    >
+                        <p className="text-sm font-bold text-slate-600">
+                            {domainInfo?.emoji} {domainInfo?.name}: {curriculumMeta.progress.completed_in_domain}/{curriculumMeta.progress.videos_in_domain} completed ({curriculumMeta.progress.percentage}%)
+                        </p>
+                    </motion.div>
+                )}
+
                 {activityResults.length > 0 && (
                     <motion.div
                         initial={{ opacity: 0, y: 15 }}
@@ -221,29 +360,34 @@ function SessionContent() {
                     </motion.div>
                 )}
 
-                <motion.button
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.9 }}
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() => router.push('/child')}
-                    className="px-8 py-4 rounded-2xl text-white font-bold text-lg shadow-xl cursor-pointer relative overflow-hidden z-20"
-                    style={{
-                        background: 'linear-gradient(135deg, #FDA4AF, #C4B5FD)',
-                        boxShadow: '0 10px 30px rgba(253, 164, 175, 0.2)',
-                    }}
-                >
-                    <div className="absolute inset-0 animate-shimmer pointer-events-none"
-                        style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)', backgroundSize: '200% 100%' }}
-                    />
-                    <span className="relative flex items-center gap-2">
-                        Back to Home
-                        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                            <path d="M3 9.5L7 5V8H15V11H7V14L3 9.5Z" fill="white" />
-                        </svg>
-                    </span>
-                </motion.button>
+                <div className="flex gap-4 z-20">
+                    <motion.button
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.9 }}
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => router.push('/child/discover')}
+                        className="px-6 py-4 rounded-2xl font-bold text-lg shadow-xl cursor-pointer relative overflow-hidden text-white"
+                        style={{
+                            background: 'linear-gradient(135deg, #8B5CF6, #6366F1)',
+                            boxShadow: '0 10px 30px rgba(139, 92, 246, 0.2)',
+                        }}
+                    >
+                        Explore Map 🗺
+                    </motion.button>
+                    <motion.button
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 1.0 }}
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => router.push('/child')}
+                        className="px-6 py-4 rounded-2xl text-slate-600 font-bold text-lg shadow-lg cursor-pointer bg-white/80 backdrop-blur-xl border border-white/50"
+                    >
+                        Home 🏠
+                    </motion.button>
+                </div>
             </main>
         )
     }
@@ -256,7 +400,7 @@ function SessionContent() {
             <CelebrationOverlay
                 show={showCelebration}
                 onComplete={() => setShowCelebration(false)}
-                message="Session complete! 🌟"
+                message="Great job! Loading next lesson... 🌟"
             />
 
             {/* Ambient particles */}
@@ -274,7 +418,7 @@ function SessionContent() {
                 ))}
             </div>
 
-            {/* Top bar */}
+            {/* Top bar with curriculum info */}
             <div className="relative z-10 flex items-center justify-between p-5">
                 <motion.button
                     whileTap={{ scale: 0.9 }}
@@ -285,19 +429,30 @@ function SessionContent() {
                 </motion.button>
 
                 <div className="flex items-center gap-3">
+                    {/* Domain badge */}
+                    {domainInfo && (
+                        <div
+                            className="px-4 py-2 rounded-full text-white text-sm font-bold shadow-md flex items-center gap-2"
+                            style={{ background: domainInfo.color }}
+                        >
+                            <span>{domainInfo.emoji}</span>
+                            <span className="hidden sm:block">{domainInfo.name}</span>
+                        </div>
+                    )}
+
                     {/* Phase indicator */}
                     <div className="flex gap-2">
                         {[
                             { phase: 'video', label: '📺', active: sessionPhase === 'video' },
                             { phase: 'activities', label: '🧠', active: sessionPhase === 'activities' },
-                            { phase: 'bonus', label: '🏃', active: sessionPhase === 'bonus' },
+                            { phase: 'bonus', label: '🏃', active: sessionPhase === 'bonus' || sessionPhase === 'reinforcement' },
                         ].map((p, i) => (
                             <div
                                 key={i}
                                 className={`w-9 h-9 rounded-full flex items-center justify-center text-sm transition-all ${
                                     p.active
                                         ? 'bg-purple-100 shadow-sm scale-110'
-                                        : sessionPhase === 'complete' || (sessionPhase === 'activities' && p.phase === 'video') || (sessionPhase === 'bonus' && p.phase !== 'bonus')
+                                        : (sessionPhase === 'activities' && p.phase === 'video') || (sessionPhase === 'bonus' && p.phase !== 'bonus') || (sessionPhase === 'reinforcement' && p.phase === 'video')
                                             ? 'bg-emerald-100'
                                             : 'bg-gray-50'
                                 }`}
@@ -308,6 +463,55 @@ function SessionContent() {
                     </div>
                 </div>
             </div>
+
+            {/* Curriculum context bar */}
+            {curriculumMeta?.progress && sessionPhase === 'video' && (
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="relative z-10 mx-5 mb-3"
+                >
+                    <div className="bg-white/70 backdrop-blur-lg rounded-2xl px-5 py-3 shadow-sm border border-white/50">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className="text-lg">{domainInfo?.emoji}</span>
+                                <div>
+                                    <p className="text-sm font-bold text-slate-700">
+                                        {curriculumMeta.reason === 'phonics_continuation'
+                                            ? `Learning "${curriculumMeta.progress.current_learning_topic || curriculumMeta.progress.current_topic}" → Now the sound!`
+                                            : `You are learning: ${curriculumMeta.progress.current_learning_topic || curriculumMeta.progress.current_topic}`
+                                        }
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <p className="text-xs text-slate-400 font-medium">
+                                            {reasonLabel}
+                                        </p>
+                                        {curriculumMeta.progress.stage && STAGE_LABELS[curriculumMeta.progress.stage] && (
+                                            <span
+                                                className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                                                style={{ background: STAGE_LABELS[curriculumMeta.progress.stage].color }}
+                                            >
+                                                {STAGE_LABELS[curriculumMeta.progress.stage].emoji} {STAGE_LABELS[curriculumMeta.progress.stage].name}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-24 h-2 rounded-full bg-slate-100 overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${curriculumMeta.progress.percentage}%` }}
+                                        className="h-full rounded-full"
+                                        style={{ background: domainInfo?.color || '#8B5CF6' }}
+                                    />
+                                </div>
+                                <span className="text-xs font-bold text-slate-400">{curriculumMeta.progress.percentage}%</span>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
 
             {/* Main content */}
             <div className="relative z-10 flex-1 px-5 pb-6 max-w-2xl mx-auto w-full">
@@ -322,7 +526,7 @@ function SessionContent() {
                         >
                             <div className="flex items-center gap-3 mb-5">
                                 <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md"
-                                    style={{ background: 'linear-gradient(135deg, #60A5FA, #22D3EE)' }}
+                                    style={{ background: domainInfo ? `linear-gradient(135deg, ${domainInfo.color}, ${domainInfo.color}cc)` : 'linear-gradient(135deg, #60A5FA, #22D3EE)' }}
                                 >
                                     <VideoIcon size={24} />
                                 </div>
@@ -352,7 +556,6 @@ function SessionContent() {
                                 </div>
                             )}
 
-                            {/* Skip to activities (for testing) */}
                             <motion.button
                                 whileTap={{ scale: 0.98 }}
                                 onClick={handleVideoComplete}
@@ -360,6 +563,69 @@ function SessionContent() {
                             >
                                 Skip to activities ➡
                             </motion.button>
+                        </motion.div>
+                    )}
+
+                    {/* Reinforcement Phase */}
+                    {sessionPhase === 'reinforcement' && reinforcement && (
+                        <motion.div
+                            key="reinforcement"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            className="flex flex-col items-center justify-center min-h-[50vh]"
+                        >
+                            <div className="flex items-center gap-3 mb-8 self-start">
+                                <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md"
+                                    style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)' }}
+                                >
+                                    <span className="text-xl">🧠</span>
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-700">Quick Review!</h2>
+                                    <p className="text-sm text-slate-400 font-medium">Let&apos;s remember what we learned</p>
+                                </div>
+                            </div>
+
+                            <motion.div
+                                initial={{ scale: 0.9 }}
+                                animate={{ scale: 1 }}
+                                className="card-premium w-full p-8 flex flex-col items-center gap-6 text-center"
+                            >
+                                <div className="w-24 h-24 rounded-full flex items-center justify-center text-5xl shadow-lg"
+                                    style={{ background: domainInfo ? `${domainInfo.color}20` : '#F3E8FF' }}
+                                >
+                                    {reinforcement.emoji}
+                                </div>
+                                <h3 className="text-2xl font-black text-slate-800">
+                                    {reinforcement.prompt}
+                                </h3>
+                                <p className="text-slate-400 font-medium">
+                                    Topic: {reinforcement.topic} • {reinforcement.type === 'speech' ? 'Say it!' : reinforcement.type === 'physical' ? 'Move!' : reinforcement.type === 'find' ? 'Look around!' : 'Think!'}
+                                </p>
+
+                                {/* Countdown progress bar */}
+                                <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: '100%' }}
+                                        animate={{ width: '0%' }}
+                                        transition={{ duration: 15, ease: 'linear' }}
+                                        onAnimationComplete={handleReinforcementComplete}
+                                        className="h-full rounded-full"
+                                        style={{ background: domainInfo?.color || '#8B5CF6' }}
+                                    />
+                                </div>
+
+                                <motion.button
+                                    whileHover={{ scale: 1.03 }}
+                                    whileTap={{ scale: 0.97 }}
+                                    onClick={handleReinforcementComplete}
+                                    className="px-8 py-4 rounded-2xl text-white font-bold text-lg shadow-xl cursor-pointer"
+                                    style={{ background: domainInfo?.color || 'linear-gradient(135deg, #8B5CF6, #6366F1)' }}
+                                >
+                                    Done! Continue ➡
+                                </motion.button>
+                            </motion.div>
                         </motion.div>
                     )}
 

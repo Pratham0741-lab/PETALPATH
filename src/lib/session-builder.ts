@@ -1,9 +1,19 @@
-import type { Video, DifficultyLevel, ActivityType } from './types'
-
 /**
- * Session Builder
- * Constructs personalized 10–20 minute learning sessions
+ * @deprecated — This module is DEPRECATED.
+ *
+ * The session page now uses the curriculum engine directly via `/api/next-video`.
+ * DO NOT use buildSession() for new code — it previously used Math.random()
+ * which violates the structured curriculum rules.
+ *
+ * For video selection: use getNextVideo() from '@/lib/curriculum-engine'
+ * For session flow: see /child/session/page.tsx which implements the full
+ *   Video → Activities → Reinforcement → Next Video pipeline.
+ *
+ * This file is kept only for backward compatibility. All exports re-route
+ * to the curriculum engine.
  */
+
+import type { DifficultyLevel, ActivityType } from './types'
 
 export interface SessionPlan {
     activities: SessionActivity[]
@@ -21,35 +31,34 @@ export interface SessionActivity {
 }
 
 /**
- * Build a learning session from available videos and recommended difficulty
+ * @deprecated Use getNextVideo() from curriculum-engine.ts instead.
+ * This function no longer selects videos randomly — it returns a
+ * fixed activity skeleton without video selection.
  */
 export function buildSession(
-    videos: Video[],
+    _videos: unknown[] = [],
     difficulty: DifficultyLevel = 'easy',
-    targetDuration: number = 900 // 15 minutes in seconds
+    targetDuration: number = 900
 ): SessionPlan {
-    // Pick a video matching difficulty
-    const matchingVideos = videos.filter(v => v.difficulty === difficulty && v.is_published)
-    const video = matchingVideos.length > 0
-        ? matchingVideos[Math.floor(Math.random() * matchingVideos.length)]
-        : videos.find(v => v.is_published) || null
+    console.warn(
+        '[session-builder] DEPRECATED: buildSession() called. ' +
+        'Use getNextVideo() from curriculum-engine.ts instead.'
+    )
 
-    const videoDuration = video ? Math.min(video.duration || 180, 300) : 180 // max 5 minutes
-
+    // Return activity skeleton only — video selection must come from curriculum engine
     const activities: SessionActivity[] = [
         {
             type: 'video',
-            title: video ? video.title : 'Learning Video',
+            title: 'Learning Video',
             instructions: 'Watch the video carefully!',
-            duration: videoDuration,
-            videoId: video?.id,
+            duration: Math.min(300, targetDuration * 0.4),
             order: 1,
         },
         {
             type: 'speaking',
             title: 'Speaking Time',
             instructions: 'Repeat the sounds and words!',
-            duration: Math.min(180, targetDuration * 0.2), // 20% of session
+            duration: Math.min(180, targetDuration * 0.2),
             order: 2,
         },
         {
@@ -68,11 +77,9 @@ export function buildSession(
         },
     ]
 
-    const estimatedDuration = activities.reduce((sum, a) => sum + a.duration, 0)
-
     return {
         activities,
-        estimatedDuration,
+        estimatedDuration: activities.reduce((sum, a) => sum + a.duration, 0),
         difficulty,
     }
 }

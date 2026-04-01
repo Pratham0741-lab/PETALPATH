@@ -46,7 +46,7 @@ export default function MascotGuide({ message, emotion = 'happy', size = 'md' }:
     return (
         <div className="flex flex-col items-center gap-3">
             <motion.div
-                animate={config.animation}
+                animate={config.animation as Record<string, number[]>}
                 transition={{
                     duration: emotion === 'celebrating' ? 1.5 : 3,
                     repeat: Infinity,
