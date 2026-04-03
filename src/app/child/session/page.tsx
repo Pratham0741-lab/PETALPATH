@@ -12,7 +12,25 @@ import type { VideoWithTags, TopicResult } from '@/lib/activity-types'
 import type { ReinforcementActivity } from '@/lib/reinforcement-engine'
 import { VideoIcon, TrophyIcon, StarIcon, PetalFlower, ArrowBackIcon, SparkleIcon } from '@/components/ui/PetalIcons'
 
+// ─── Session State Machine ──────────────────────────────────────
+// VIDEO → ACTIVITY → DECISION → NEXT VIDEO → REPEAT
+type SessionMode = 'video' | 'activity'
 type SessionPhase = 'loading' | 'video' | 'activities' | 'reinforcement' | 'bonus' | 'complete'
+
+// ─── Video shape from the new clean GET APIs ────────────────────
+interface APIVideo {
+    id: string
+    title: string
+    video_url?: string
+    thumbnail_url?: string
+    topics?: string[]
+    domain?: string
+    stage?: string
+    sequence_order?: number
+    duration?: number
+    category?: string
+    difficulty?: string
+}
 
 interface CurriculumMeta {
     reason: string
@@ -51,9 +69,29 @@ const REASON_LABELS: Record<string, string> = {
     domain_locked: 'Keep learning to unlock!',
 }
 
+// ─── Convert API response video → internal VideoWithTags ────────
+function apiVideoToInternal(apiVideo: APIVideo): VideoWithTags {
+    return {
+        id: apiVideo.id,
+        title: apiVideo.title,
+        video_url: apiVideo.video_url,
+        thumbnail_url: apiVideo.thumbnail_url,
+        category: apiVideo.category || '',
+        difficulty: apiVideo.difficulty || 'easy',
+        tags: apiVideo.topics || [],
+        duration: apiVideo.duration,
+        domain: apiVideo.domain,
+        stage: apiVideo.stage,
+        learning_order: apiVideo.sequence_order,
+    }
+}
+
 function SessionContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
+
+    // ─── Core State Machine ─────────────────────────────────
+    const [mode, setMode] = useState<SessionMode>('video')
     const [sessionPhase, setSessionPhase] = useState<SessionPhase>('loading')
     const [video, setVideo] = useState<VideoWithTags | null>(null)
     const [weakTopics, setWeakTopics] = useState<string[]>([])
@@ -64,145 +102,162 @@ function SessionContent() {
     const [reinforcement, setReinforcement] = useState<ReinforcementActivity | null>(null)
     const [videosWatchedInSession, setVideosWatchedInSession] = useState(0)
 
-    // ─── Load first video via curriculum engine (NO RANDOMNESS) ───
+    // ═══════════════════════════════════════════════════════════
+    // STEP 1: Start Session — Fetch first video
+    // ═══════════════════════════════════════════════════════════
     useEffect(() => {
         const id = sessionStorage.getItem('activeChildId') || ''
         setChildId(id)
 
-        async function loadFirstVideo() {
+        async function startSession() {
             try {
-                const domain = searchParams?.get('domain') || undefined
                 const videoId = searchParams?.get('video_id') || undefined
+                const domain = searchParams?.get('domain') || undefined
 
-                // If a specific video_id is passed (from Explore Map)
+                // Case A: Specific video_id passed (from Explore Map click)
                 if (videoId) {
-                    const videoRes = await fetch('/api/videos')
-                    const videoJson = await videoRes.json()
-                    const found = videoJson.videos?.find((v: VideoWithTags) => v.id === videoId)
-                    if (found) {
-                        setVideo(found)
+                    const res = await fetch(`/api/video/${videoId}`)
+                    const json = await res.json()
+                    if (json.success && json.data) {
+                        setVideo(apiVideoToInternal(json.data))
+                        setMode('video')
                         setSessionPhase('video')
+
+                        // Fetch weak topics in background
+                        fetchWeakTopics(id)
                         return
                     }
                 }
 
-                // Use the curriculum engine to get the first video
-                const res = await fetch('/api/next-video', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        child_id: id,
-                        domain: domain || undefined,
-                    }),
-                })
-                const data = await res.json()
-
-                if (data.next_video) {
-                    setVideo({
-                        id: data.next_video.id,
-                        title: data.next_video.title,
-                        video_url: data.next_video.video_url,
-                        thumbnail_url: data.next_video.thumbnail_url,
-                        category: data.next_video.category || '',
-                        difficulty: data.next_video.difficulty || 'easy',
-                        tags: data.next_video.tags || [],
-                        duration: data.next_video.duration,
-                        domain: data.next_video.domain,
-                        stage: data.next_video.stage,
-                        learning_order: data.next_video.learning_order,
+                // Case B: Domain specified — use old curriculum engine for domain start
+                if (domain && id) {
+                    const res = await fetch('/api/next-video', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            child_id: id,
+                            domain: domain,
+                        }),
                     })
-                    setCurriculumMeta({
-                        reason: data.reason,
-                        progress: data.progress,
-                        reinforcement: data.reinforcement,
-                    })
+                    const data = await res.json()
+                    if (data.next_video) {
+                        setVideo({
+                            id: data.next_video.id,
+                            title: data.next_video.title,
+                            video_url: data.next_video.video_url,
+                            thumbnail_url: data.next_video.thumbnail_url,
+                            category: data.next_video.category || '',
+                            difficulty: data.next_video.difficulty || 'easy',
+                            tags: data.next_video.tags || [],
+                            duration: data.next_video.duration,
+                            domain: data.next_video.domain,
+                            stage: data.next_video.stage,
+                            learning_order: data.next_video.learning_order,
+                        })
+                        setCurriculumMeta({
+                            reason: data.reason,
+                            progress: data.progress,
+                            reinforcement: data.reinforcement,
+                        })
+                        setMode('video')
+                        setSessionPhase('video')
+                        fetchWeakTopics(id)
+                        return
+                    }
                 }
 
-                // Fetch weak topics
-                if (id) {
-                    const weakRes = await fetch(`/api/activity-results?child_id=${id}&status=weak`)
-                    const weakJson = await weakRes.json()
-                    if (weakJson.weakTopics) setWeakTopics(weakJson.weakTopics)
+                // Case C: Fresh start — GET /api/start
+                const startRes = await fetch('/api/start')
+                const startJson = await startRes.json()
+
+                if (startJson.success && startJson.data) {
+                    setVideo(apiVideoToInternal(startJson.data))
+                    setMode('video')
+                    setSessionPhase('video')
+                } else {
+                    // No videos available at all
+                    setSessionPhase('complete')
                 }
 
-                setSessionPhase('video')
+                // Fetch weak topics in background
+                fetchWeakTopics(id)
             } catch (err) {
-                console.error('Failed to load session data:', err)
+                console.error('[session] Failed to start:', err)
                 setSessionPhase('video')
             }
         }
 
-        loadFirstVideo()
+        startSession()
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    // ─── Fetch NEXT video from curriculum engine ───
+    // ─── Fetch weak topics helper ───────────────────────────
+    async function fetchWeakTopics(cid: string) {
+        if (!cid) return
+        try {
+            const res = await fetch(`/api/activity-results?child_id=${cid}&status=weak`)
+            const json = await res.json()
+            if (json.weakTopics) setWeakTopics(json.weakTopics)
+        } catch { /* non-critical */ }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // STEP 7: Load NEXT video using clean GET API
+    // ═══════════════════════════════════════════════════════════
     const loadNextVideo = useCallback(async () => {
-        if (!video || !childId) return
+        if (!video) return
 
         try {
-            const res = await fetch('/api/next-video', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    current_video_id: video.id,
-                    child_id: childId,
-                }),
-            })
-            const data = await res.json()
+            // Use the new GET /api/next-video?video_id=<uuid>
+            const res = await fetch(`/api/next-video?video_id=${video.id}`)
+            const json = await res.json()
 
-            if (data.next_video) {
-                setVideo({
-                    id: data.next_video.id,
-                    title: data.next_video.title,
-                    video_url: data.next_video.video_url,
-                    thumbnail_url: data.next_video.thumbnail_url,
-                    category: data.next_video.category || '',
-                    difficulty: data.next_video.difficulty || 'easy',
-                    tags: data.next_video.tags || [],
-                    duration: data.next_video.duration,
-                    domain: data.next_video.domain,
-                    stage: data.next_video.stage,
-                    learning_order: data.next_video.learning_order,
-                })
-                setCurriculumMeta({
-                    reason: data.reason,
-                    progress: data.progress,
-                    reinforcement: data.reinforcement,
-                })
-
-                // If reinforcement is needed, show it before the video
-                if (data.reason === 'reinforcement_session' && data.reinforcement) {
-                    setReinforcement(data.reinforcement)
-                    setSessionPhase('reinforcement')
-                } else {
-                    setSessionPhase('video')
-                }
-
-                setVideosWatchedInSession(prev => prev + 1)
-            } else {
-                // No more videos — complete the session
+            if (!json.success) {
+                console.error('[session] Next-video API error:', json.error)
                 setSessionPhase('complete')
+                return
             }
+
+            // Check if curriculum is done
+            if (json.data.done) {
+                setSessionPhase('complete')
+                return
+            }
+
+            // Set new video
+            const nextVideo = apiVideoToInternal(json.data.video)
+            setVideo(nextVideo)
+            setMode('video')
+            setSessionPhase('video')
+            setVideosWatchedInSession(prev => prev + 1)
         } catch (err) {
-            console.error('Failed to load next video:', err)
+            console.error('[session] Failed to load next video:', err)
             setSessionPhase('complete')
         }
-    }, [video, childId])
+    }, [video])
 
-    // Handle video completion → start activity engine
+    // ═══════════════════════════════════════════════════════════
+    // STEP 2: Video ends → Trigger Activity Engine
+    // ═══════════════════════════════════════════════════════════
     const handleVideoComplete = useCallback(() => {
         if (video && video.tags && video.tags.length > 0) {
+            // Switch to activity mode
+            setMode('activity')
             setSessionPhase('activities')
         } else {
+            // No topics to practice — skip to bonus
+            setMode('activity')
             setSessionPhase('bonus')
         }
     }, [video])
 
-    // Handle activity engine completion
+    // ═══════════════════════════════════════════════════════════
+    // STEP 5 & 6: Handle activity completion + save results
+    // ═══════════════════════════════════════════════════════════
     const handleActivitiesComplete = useCallback((results: TopicResult[]) => {
         setActivityResults(results)
 
+        // Save aggregate progress to API (fire-and-forget)
         if (childId) {
             const avgScore = results.length > 0
                 ? results.reduce((sum, r) => sum + r.decision.finalScore, 0) / results.length
@@ -227,16 +282,21 @@ function SessionContent() {
             }).catch(console.error)
         }
 
+        // Move to bonus round
         setSessionPhase('bonus')
     }, [childId, video])
 
-    // Handle replay video
+    // ═══════════════════════════════════════════════════════════
+    // STEP 8: Replay — re-show video without changing state
+    // ═══════════════════════════════════════════════════════════
     const handleReplayVideo = useCallback(() => {
+        setMode('video')
         setSessionPhase('video')
     }, [])
 
-    // Handle bonus/physical complete → load NEXT video
+    // ─── Bonus/Physical complete → celebration → next video ──
     const handleBonusComplete = useCallback(() => {
+        // Award stars
         if (childId) {
             const strongCount = activityResults.filter(r => r.status === 'strong').length
             const stars = 3 + strongCount * 2
@@ -244,25 +304,28 @@ function SessionContent() {
             localStorage.setItem(`stars_${childId}`, (current + stars).toString())
         }
 
+        // Show celebration, then load next video
         setShowCelebration(true)
         setTimeout(() => {
             setShowCelebration(false)
-            // Instead of going to complete, load the NEXT video
             loadNextVideo()
         }, 3500)
     }, [childId, activityResults, loadNextVideo])
 
-    // Handle reinforcement activity complete
+    // ─── Reinforcement activity complete ─────────────────────
     const handleReinforcementComplete = useCallback(() => {
         setReinforcement(null)
+        setMode('video')
         setSessionPhase('video')
     }, [])
 
-    // ─── Domain Info Bar ───
+    // ─── Derived UI state ────────────────────────────────────
     const domainInfo = video?.domain ? DOMAIN_LABELS[video.domain] : null
     const reasonLabel = curriculumMeta?.reason ? REASON_LABELS[curriculumMeta.reason] || '' : ''
 
-    // ─── Loading ───
+    // ═══════════════════════════════════════════════════════════
+    // RENDER: Loading
+    // ═══════════════════════════════════════════════════════════
     if (sessionPhase === 'loading') {
         return (
             <main className="min-h-screen flex items-center justify-center bg-transparent relative">
@@ -280,7 +343,9 @@ function SessionContent() {
         )
     }
 
-    // ─── Complete (all videos done) ───
+    // ═══════════════════════════════════════════════════════════
+    // RENDER: Complete (all videos done)
+    // ═══════════════════════════════════════════════════════════
     if (sessionPhase === 'complete') {
         const strongCount = activityResults.filter(r => r.status === 'strong').length
         const totalStars = 3 + strongCount * 2
@@ -392,7 +457,9 @@ function SessionContent() {
         )
     }
 
-    // ─── Active Session ───
+    // ═══════════════════════════════════════════════════════════
+    // RENDER: Active Session (VIDEO ↔ ACTIVITY loop)
+    // ═══════════════════════════════════════════════════════════
     return (
         <main className="min-h-screen safe-area flex flex-col relative overflow-hidden bg-transparent">
             <LearningPlayground />
@@ -418,7 +485,7 @@ function SessionContent() {
                 ))}
             </div>
 
-            {/* Top bar with curriculum info */}
+            {/* ─── Top bar with curriculum info + mode indicator ─── */}
             <div className="relative z-10 flex items-center justify-between p-5">
                 <motion.button
                     whileTap={{ scale: 0.9 }}
@@ -440,11 +507,11 @@ function SessionContent() {
                         </div>
                     )}
 
-                    {/* Phase indicator */}
+                    {/* Mode indicator: VIDEO ↔ ACTIVITY */}
                     <div className="flex gap-2">
                         {[
-                            { phase: 'video', label: '📺', active: sessionPhase === 'video' },
-                            { phase: 'activities', label: '🧠', active: sessionPhase === 'activities' },
+                            { phase: 'video', label: '📺', active: mode === 'video' && sessionPhase === 'video' },
+                            { phase: 'activities', label: '🧠', active: mode === 'activity' && sessionPhase === 'activities' },
                             { phase: 'bonus', label: '🏃', active: sessionPhase === 'bonus' || sessionPhase === 'reinforcement' },
                         ].map((p, i) => (
                             <div
@@ -464,7 +531,7 @@ function SessionContent() {
                 </div>
             </div>
 
-            {/* Curriculum context bar */}
+            {/* Curriculum context bar (only during video phase) */}
             {curriculumMeta?.progress && sessionPhase === 'video' && (
                 <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -513,10 +580,11 @@ function SessionContent() {
                 </motion.div>
             )}
 
-            {/* Main content */}
+            {/* ─── Main Content Area ─── */}
             <div className="relative z-10 flex-1 px-5 pb-6 max-w-2xl mx-auto w-full">
                 <AnimatePresence mode="wait">
-                    {/* Video Phase */}
+
+                    {/* ═══ VIDEO PHASE ═══ */}
                     {sessionPhase === 'video' && (
                         <motion.div
                             key="video"
@@ -544,7 +612,7 @@ function SessionContent() {
                                 />
                             </div>
 
-                            {/* Tags preview */}
+                            {/* Topics preview from video.tags */}
                             {video?.tags && video.tags.length > 0 && (
                                 <div className="mt-4 flex items-center gap-2 flex-wrap">
                                     <span className="text-xs font-bold text-slate-400">Topics:</span>
@@ -566,7 +634,7 @@ function SessionContent() {
                         </motion.div>
                     )}
 
-                    {/* Reinforcement Phase */}
+                    {/* ═══ REINFORCEMENT PHASE ═══ */}
                     {sessionPhase === 'reinforcement' && reinforcement && (
                         <motion.div
                             key="reinforcement"
@@ -629,7 +697,7 @@ function SessionContent() {
                         </motion.div>
                     )}
 
-                    {/* Activities Phase */}
+                    {/* ═══ ACTIVITIES PHASE (Activity Engine) ═══ */}
                     {sessionPhase === 'activities' && video && (
                         <motion.div
                             key="activities"
@@ -649,6 +717,14 @@ function SessionContent() {
                                 </div>
                             </div>
 
+                            {/* ─── ActivityEngine integration ───
+                                 Props:
+                                   video       → uses video.tags (topics) to generate activities
+                                   childId     → for saving results
+                                   weakTopics  → prioritize weak areas
+                                   onComplete  → handleActivitiesComplete (saves + advances)
+                                   onReplayVideo → handleReplayVideo (re-shows video)
+                            */}
                             <ActivityEngine
                                 video={video}
                                 childId={childId}
@@ -659,7 +735,7 @@ function SessionContent() {
                         </motion.div>
                     )}
 
-                    {/* Bonus Physical Activity */}
+                    {/* ═══ BONUS PHYSICAL ACTIVITY ═══ */}
                     {sessionPhase === 'bonus' && (
                         <motion.div
                             key="bonus"
