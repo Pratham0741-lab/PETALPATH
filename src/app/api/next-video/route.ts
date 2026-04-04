@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
             .from('videos')
             .select('id, title, video_url, thumbnail_url, tags:topics, domain, stage, learning_order, duration, category')
             .eq('is_published', true)
+            .eq('domain', currentVideo.domain)
             .gt('learning_order', currentVideo.learning_order)
             .order('learning_order', { ascending: true })
             .limit(1)

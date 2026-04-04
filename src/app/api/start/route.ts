@@ -40,6 +40,7 @@ export async function GET() {
             .eq('is_published', true)
             .not('domain', 'is', null)
             .order('learning_order', { ascending: true })
+            .order('domain', { ascending: true })
             .limit(1)
             .maybeSingle()
 

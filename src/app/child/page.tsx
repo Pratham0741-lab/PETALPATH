@@ -16,11 +16,11 @@ const DOMAIN_COLORS: Record<string, { gradient: string; color: string; emoji: st
 }
 
 const MENU_ITEMS = [
+    { id: 'discover', Icon: ExploreIcon, label: 'Explore Map', gradient: 'linear-gradient(135deg, #8B5CF6, #6366F1)', shadow: 'rgba(139,92,246,0.4)', href: '/child/discover' },
     { id: 'session', Icon: VideoIcon, label: 'Watch & Learn', gradient: 'linear-gradient(135deg, #3B82F6, #06B6D4)', shadow: 'rgba(59,130,246,0.4)', href: '/child/session' },
     { id: 'speak', Icon: MicIcon, label: 'Speak Words', gradient: 'linear-gradient(135deg, #EC4899, #F43F5E)', shadow: 'rgba(236,72,153,0.4)', href: '/child/session?focus=speaking' },
     { id: 'camera', Icon: CameraIcon, label: 'Show & Tell', gradient: 'linear-gradient(135deg, #10B981, #14B8A6)', shadow: 'rgba(16,185,129,0.4)', href: '/child/session?focus=camera' },
     { id: 'move', Icon: RunIcon, label: 'Move Body', gradient: 'linear-gradient(135deg, #F59E0B, #EA580C)', shadow: 'rgba(245,158,11,0.4)', href: '/child/session?focus=physical' },
-    { id: 'discover', Icon: ExploreIcon, label: 'Explore Map', gradient: 'linear-gradient(135deg, #8B5CF6, #6366F1)', shadow: 'rgba(139,92,246,0.4)', href: '/child/discover' },
     { id: 'reward', Icon: StarIcon, label: 'My Rewards', gradient: 'linear-gradient(135deg, #EAB308, #F59E0B)', shadow: 'rgba(234,179,8,0.4)', href: '#' },
 ]
 
