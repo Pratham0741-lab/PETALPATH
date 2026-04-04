@@ -61,19 +61,85 @@ export default function DiscoveryMapPage() {
     useEffect(() => {
         async function loadProgress() {
             const childId = sessionStorage.getItem('activeChildId')
-            if (!childId) {
-                setLoading(false)
-                return
+
+            // ─── Try fetching with child_id if available ───
+            if (childId) {
+                try {
+                    const res = await fetch(`/api/curriculum-progress?child_id=${childId}`)
+                    const data = await res.json()
+                    if (data.domains && data.domains.length > 0) {
+                        setDomains(data.domains)
+                        if (data.overall) setOverall(data.overall)
+                        setLoading(false)
+                        return
+                    }
+                } catch (err) {
+                    console.error('Failed to load curriculum progress:', err)
+                }
             }
 
+            // ─── Fallback: Build domain data from /api/curriculum ───
+            // Works even without a child login — shows all domains with 0 progress
             try {
-                const res = await fetch(`/api/curriculum-progress?child_id=${childId}`)
-                const data = await res.json()
-                if (data.domains) setDomains(data.domains)
-                if (data.overall) setOverall(data.overall)
+                const res = await fetch('/api/curriculum')
+                const json = await res.json()
+
+                if (json.success && json.data) {
+                    const currData = json.data
+                    // Count videos per domain from the curriculum data
+                    const domainCounts: Record<string, { total: number; firstVideoId: string | null; firstVideoTitle: string | null }> = {}
+
+                    if (currData.stages) {
+                        for (const stage of currData.stages) {
+                            for (const vid of stage.videos) {
+                                const d = vid.domain || 'general'
+                                if (!domainCounts[d]) {
+                                    domainCounts[d] = { total: 0, firstVideoId: null, firstVideoTitle: null }
+                                }
+                                domainCounts[d].total++
+                                if (!domainCounts[d].firstVideoId) {
+                                    domainCounts[d].firstVideoId = vid.id
+                                    domainCounts[d].firstVideoTitle = vid.title
+                                }
+                            }
+                        }
+                    }
+
+                    // Build domain progress from static config
+                    const DOMAIN_CONFIG: Record<string, { title: string; stage: string; color: string; emoji: string; icon: string; unlocked: boolean; prerequisite: DomainProgress['prerequisite'] }> = {
+                        numbers: { title: 'Number Forest', stage: 'foundation', color: '#34D399', emoji: '1️⃣', icon: '🌲', unlocked: true, prerequisite: null },
+                        alphabet: { title: 'Alphabet Mountain', stage: 'foundation', color: '#60A5FA', emoji: '🔤', icon: '🏔', unlocked: true, prerequisite: null },
+                        phonics: { title: 'Phonics Valley', stage: 'understanding', color: '#F472B6', emoji: '🗣', icon: '🔊', unlocked: true, prerequisite: { domain: 'alphabet', title: 'Alphabet Mountain', min_percent: 50 } },
+                        shapes: { title: 'Shape Island', stage: 'application', color: '#FBBF24', emoji: '🟡', icon: '🔺', unlocked: true, prerequisite: { domain: 'numbers', title: 'Number Forest', min_percent: 50 } },
+                    }
+
+                    const builtDomains: DomainProgress[] = Object.entries(DOMAIN_CONFIG).map(([key, cfg]) => {
+                        const counts = domainCounts[key] || { total: 0, firstVideoId: null, firstVideoTitle: null }
+                        return {
+                            domain: key,
+                            stage: cfg.stage,
+                            title: cfg.title,
+                            icon: cfg.icon,
+                            color: cfg.color,
+                            emoji: cfg.emoji,
+                            total: counts.total,
+                            completed: 0,
+                            percentage: 0,
+                            unlocked: cfg.unlocked,
+                            next_video_title: counts.firstVideoTitle,
+                            next_video_id: counts.firstVideoId,
+                            prerequisite: cfg.prerequisite,
+                        }
+                    })
+
+                    setDomains(builtDomains)
+                    const totalVideos = builtDomains.reduce((sum, d) => sum + d.total, 0)
+                    setOverall({ total_videos: totalVideos, total_completed: 0, percentage: 0 })
+                }
             } catch (err) {
-                console.error('Failed to load curriculum progress:', err)
+                console.error('Failed to load curriculum fallback:', err)
             }
+
             setLoading(false)
         }
         loadProgress()
