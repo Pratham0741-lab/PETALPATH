@@ -25,30 +25,27 @@ interface DomainProgress {
     } | null
 }
 
-// Visual positioning for each domain on the map
+// Visual positioning for each domain to follow a winding roadmap
 const MAP_POSITIONS: Record<string, { x: number; y: number }> = {
-    numbers: { x: 20, y: 35 },
-    alphabet: { x: 72, y: 20 },
-    phonics: { x: 25, y: 75 },
-    shapes: { x: 78, y: 70 },
+    numbers: { x: 15, y: 65 },
+    alphabet: { x: 40, y: 35 },
+    phonics: { x: 65, y: 70 },
+    shapes: { x: 88, y: 40 },
 }
 
 // Zone theme gradients for each domain
 const ZONE_THEMES: Record<string, { bg: string; glow: string }> = {
-    numbers:  { bg: 'radial-gradient(circle at 20% 35%, rgba(52,211,153,0.15) 0%, transparent 50%)', glow: 'rgba(52,211,153,0.3)' },
-    alphabet: { bg: 'radial-gradient(circle at 72% 20%, rgba(96,165,250,0.15) 0%, transparent 50%)', glow: 'rgba(96,165,250,0.3)' },
-    phonics:  { bg: 'radial-gradient(circle at 25% 75%, rgba(244,114,182,0.15) 0%, transparent 50%)', glow: 'rgba(244,114,182,0.3)' },
-    shapes:   { bg: 'radial-gradient(circle at 78% 70%, rgba(251,191,36,0.15) 0%, transparent 50%)', glow: 'rgba(251,191,36,0.3)' },
+    numbers:  { bg: 'radial-gradient(circle at 15% 65%, rgba(52,211,153,0.15) 0%, transparent 40%)', glow: 'rgba(52,211,153,0.3)' },
+    alphabet: { bg: 'radial-gradient(circle at 40% 35%, rgba(96,165,250,0.15) 0%, transparent 40%)', glow: 'rgba(96,165,250,0.3)' },
+    phonics:  { bg: 'radial-gradient(circle at 65% 70%, rgba(244,114,182,0.15) 0%, transparent 40%)', glow: 'rgba(244,114,182,0.3)' },
+    shapes:   { bg: 'radial-gradient(circle at 88% 40%, rgba(251,191,36,0.15) 0%, transparent 40%)', glow: 'rgba(251,191,36,0.3)' },
 }
 
 // Milestone thresholds (shown as markers on each domain)
 const MILESTONES = [25, 50, 75, 100]
 
-// Decorative path SVG connections between domains
-const MAP_PATHS = [
-    { from: 'numbers', to: 'shapes', d: 'M 22 40 Q 50 55, 76 68', arrow: 'M 73 66 L 76 68 L 73 70' },
-    { from: 'alphabet', to: 'phonics', d: 'M 70 28 Q 45 52, 27 70', arrow: 'M 30 67 L 27 70 L 30 72' },
-]
+// Unified winding path for the roadmap
+const ROADMAP_PATH = "M -10 65 L 15 65 C 28 65, 25 35, 40 35 C 55 35, 50 70, 65 70 C 80 70, 75 40, 88 40 L 110 40"
 
 export default function DiscoveryMapPage() {
     const router = useRouter()
@@ -219,50 +216,56 @@ export default function DiscoveryMapPage() {
                     <div className="absolute bottom-10 right-10 opacity-50"><ButterflyIcon size={48} color="#A78BFA" /></div>
                     <div className="absolute top-1/2 left-1/2 opacity-20"><SparkleIcon size={40} color="#FCD34D" /></div>
 
-                    {/* Connection paths between domains (animated) */}
+                    {/* Unified Winding Roadmap Path */}
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                         <defs>
-                            <linearGradient id="pathGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.6" />
-                                <stop offset="100%" stopColor="#EC4899" stopOpacity="0.6" />
+                            <linearGradient id="roadGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.8" />
+                                <stop offset="33%" stopColor="#3B82F6" stopOpacity="0.8" />
+                                <stop offset="66%" stopColor="#EC4899" stopOpacity="0.8" />
+                                <stop offset="100%" stopColor="#F59E0B" stopOpacity="0.8" />
                             </linearGradient>
+                            <filter id="shadow">
+                                <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.1"/>
+                            </filter>
                         </defs>
-                        {MAP_PATHS.map((path, i) => {
-                            const fromDomain = domains.find(d => d.domain === path.from)
-                            const toDomain = domains.find(d => d.domain === path.to)
-                            const isActive = fromDomain?.unlocked && toDomain?.unlocked
-
-                            return (
-                                <g key={i}>
-                                    <path
-                                        d={path.d}
-                                        fill="none"
-                                        stroke={isActive ? 'url(#pathGradient)' : '#CBD5E1'}
-                                        strokeWidth={isActive ? '0.6' : '0.4'}
-                                        strokeDasharray={isActive ? '3 2' : '2 2'}
-                                        opacity={isActive ? 0.7 : 0.3}
-                                    >
-                                        {isActive && (
-                                            <animate
-                                                attributeName="stroke-dashoffset"
-                                                from="0" to="-10"
-                                                dur="2s" repeatCount="indefinite"
-                                            />
-                                        )}
-                                    </path>
-                                    {/* Direction arrow */}
-                                    {isActive && path.arrow && (
-                                        <path
-                                            d={path.arrow}
-                                            fill="none"
-                                            stroke="#8B5CF6"
-                                            strokeWidth="0.5"
-                                            opacity="0.6"
-                                        />
-                                    )}
-                                </g>
-                            )
-                        })}
+                        
+                        {/* Thick white road base */}
+                        <path
+                            d={ROADMAP_PATH}
+                            fill="none"
+                            stroke="#FFFFFF"
+                            strokeWidth="4"
+                            strokeLinecap="round"
+                            filter="url(#shadow)"
+                        />
+                        {/* Colored gradient track */}
+                        <path
+                            d={ROADMAP_PATH}
+                            fill="none"
+                            stroke="url(#roadGradient)"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                        />
+                        {/* Inner dashed line for journey effect */}
+                        <path
+                            d={ROADMAP_PATH}
+                            fill="none"
+                            stroke="#FFFFFF"
+                            strokeWidth="0.8"
+                            strokeDasharray="2 3"
+                        />
+                        
+                        {/* Animated traveling dots along the path */}
+                        <circle r="1" fill="#FFFFFF" filter="url(#shadow)">
+                            <animateMotion dur="8s" repeatCount="indefinite" path={ROADMAP_PATH} />
+                        </circle>
+                        <circle r="1.5" fill="#FCD34D" filter="url(#shadow)">
+                            <animateMotion dur="8s" begin="2.6s" repeatCount="indefinite" path={ROADMAP_PATH} />
+                        </circle>
+                        <circle r="1" fill="#FFFFFF" filter="url(#shadow)">
+                            <animateMotion dur="8s" begin="5.2s" repeatCount="indefinite" path={ROADMAP_PATH} />
+                        </circle>
                     </svg>
 
                     {/* Domain locations */}
