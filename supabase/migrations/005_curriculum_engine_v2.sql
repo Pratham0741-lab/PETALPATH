@@ -132,7 +132,7 @@ BEGIN
         v_stage := 'foundation';
 
         -- Extract letter for A-Z ordering (A=1, B=2 ... Z=26)
-        v_letter := UPPER((regexp_match(NEW.title, '(?:letter\s+)?([A-Z])', 'i'))[1]);
+        v_letter := UPPER((regexp_match(NEW.title, '\y(?:(?:letter|letters)\s+)?([A-Z])\y', 'i'))[1]);
         IF v_letter IS NOT NULL THEN
             v_order := ASCII(v_letter) - ASCII('A') + 1;
         ELSE
@@ -147,7 +147,7 @@ BEGIN
         v_stage := 'understanding';
 
         -- Extract letter for A-Z ordering
-        v_letter := UPPER((regexp_match(NEW.title, '([A-Z])', 'i'))[1]);
+        v_letter := UPPER((regexp_match(NEW.title, '\y(?:(?:letter|of)\s+)?([A-Z])\y', 'i'))[1]);
         IF v_letter IS NOT NULL THEN
             v_order := ASCII(v_letter) - ASCII('A') + 1;
         ELSE
@@ -245,7 +245,7 @@ UPDATE videos SET
     domain = 'alphabet',
     stage = 'foundation',
     learning_order = COALESCE(
-        ASCII(UPPER((regexp_match(title, '(?:letter\s+)?([A-Z])', 'i'))[1])) - ASCII('A') + 1,
+        ASCII(UPPER((regexp_match(title, '\y(?:(?:letter|letters)\s+)?([A-Z])\y', 'i'))[1])) - ASCII('A') + 1,
         99
     )
 WHERE is_published = true
@@ -263,7 +263,7 @@ UPDATE videos SET
     domain = 'phonics',
     stage = 'understanding',
     learning_order = COALESCE(
-        ASCII(UPPER((regexp_match(title, '([A-Z])', 'i'))[1])) - ASCII('A') + 1,
+        ASCII(UPPER((regexp_match(title, '\y(?:(?:letter|of)\s+)?([A-Z])\y', 'i'))[1])) - ASCII('A') + 1,
         99
     )
 WHERE is_published = true
