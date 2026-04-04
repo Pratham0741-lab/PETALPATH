@@ -85,23 +85,20 @@ export default function DiscoveryMapPage() {
                 const json = await res.json()
 
                 if (json.success && json.data) {
-                    const currData = json.data
+                    // API returns flat array: [{ stage, domain, video: { id, title, ... } }]
+                    const items = Array.isArray(json.data) ? json.data : []
                     // Count videos per domain from the curriculum data
                     const domainCounts: Record<string, { total: number; firstVideoId: string | null; firstVideoTitle: string | null }> = {}
 
-                    if (currData.stages) {
-                        for (const stage of currData.stages) {
-                            for (const vid of stage.videos) {
-                                const d = vid.domain || 'general'
-                                if (!domainCounts[d]) {
-                                    domainCounts[d] = { total: 0, firstVideoId: null, firstVideoTitle: null }
-                                }
-                                domainCounts[d].total++
-                                if (!domainCounts[d].firstVideoId) {
-                                    domainCounts[d].firstVideoId = vid.id
-                                    domainCounts[d].firstVideoTitle = vid.title
-                                }
-                            }
+                    for (const item of items) {
+                        const d = item.domain || 'general'
+                        if (!domainCounts[d]) {
+                            domainCounts[d] = { total: 0, firstVideoId: null, firstVideoTitle: null }
+                        }
+                        domainCounts[d].total++
+                        if (!domainCounts[d].firstVideoId && item.video) {
+                            domainCounts[d].firstVideoId = item.video.id
+                            domainCounts[d].firstVideoTitle = item.video.title
                         }
                     }
 
