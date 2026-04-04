@@ -64,3 +64,23 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ progress: data })
 }
+
+export async function DELETE(request: NextRequest) {
+    const supabase = await createServerSupabase()
+    const childId = request.nextUrl.searchParams.get('child_id')
+
+    if (!childId) {
+        return NextResponse.json({ error: 'child_id required' }, { status: 400 })
+    }
+
+    // Reset tracking tables
+    const { error: progErr } = await supabase.from('progress').delete().eq('child_id', childId)
+    const { error: sigErr } = await supabase.from('adaptive_learning_signals').delete().eq('child_id', childId)
+    const { error: histErr } = await supabase.from('child_video_history').delete().eq('child_id', childId)
+
+    if (progErr || sigErr || histErr) {
+        return NextResponse.json({ error: 'Failed to reset progress' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+}
