@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
         .from('videos')
-        .select('id, title, video_url, thumbnail_url, category, difficulty, tags, duration, domain, stage, learning_order')
+        .select('id, title, video_url, thumbnail_url, category, difficulty, tags:topics, duration, domain, stage, learning_order')
         .eq('is_published', true)
 
     // Apply optional filters

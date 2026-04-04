@@ -45,7 +45,7 @@ export async function GET() {
 
         const { data: videos, error: dbErr } = await supabase
             .from('videos')
-            .select('id, title, video_url, thumbnail_url, tags, domain, stage, learning_order, duration, category, difficulty')
+            .select('id, title, video_url, thumbnail_url, tags:topics, domain, stage, learning_order, duration, category, difficulty')
             .eq('is_published', true)
             .not('domain', 'is', null)
             .order('domain', { ascending: true })

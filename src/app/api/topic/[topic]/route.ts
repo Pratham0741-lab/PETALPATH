@@ -63,14 +63,14 @@ export async function GET(
         // Strategy 1: Search by tags (Supabase cs = contains for arrays)
         const { data: tagMatches, error: tagErr } = await supabase
             .from('videos')
-            .select('id, title, video_url, thumbnail_url, tags, domain, stage, learning_order, duration, category, difficulty')
+            .select('id, title, video_url, thumbnail_url, tags:topics, domain, stage, learning_order, duration, category, difficulty')
             .eq('is_published', true)
-            .contains('tags', [normalizedTopic])
+            .contains('topics', [normalizedTopic])
 
         // Strategy 2: Search by title (case-insensitive)
         const { data: titleMatches, error: titleErr } = await supabase
             .from('videos')
-            .select('id, title, video_url, thumbnail_url, tags, domain, stage, learning_order, duration, category, difficulty')
+            .select('id, title, video_url, thumbnail_url, tags:topics, domain, stage, learning_order, duration, category, difficulty')
             .eq('is_published', true)
             .ilike('title', `%${normalizedTopic}%`)
 

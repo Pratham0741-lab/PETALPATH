@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         // Single query: learning_order < current, ORDER DESC, LIMIT 1
         const { data: prevVideo, error: prevErr } = await supabase
             .from('videos')
-            .select('id, title, video_url, thumbnail_url, tags, domain, stage, learning_order, duration, category, difficulty')
+            .select('id, title, video_url, thumbnail_url, tags:topics, domain, stage, learning_order, duration, category, difficulty')
             .eq('is_published', true)
             .not('domain', 'is', null)
             .lt('learning_order', currentVideo.learning_order)

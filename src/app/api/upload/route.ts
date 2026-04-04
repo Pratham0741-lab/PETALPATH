@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
             const { title, description, category, difficulty, language, path, isShort } = body
             const { data: { publicUrl } } = adminSupabase.storage.from('videos').getPublicUrl(path)
             
-            const tags = isShort ? ['short'] : []
+            const topics = isShort ? ['short'] : []
             const { data, error } = await adminSupabase.from('videos').insert({
                 title, 
                 description, 
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
                 video_url: publicUrl,
                 is_published: false,
                 created_by: user.id,
-                tags
+                topics
             }).select().single()
 
             if (error) throw error

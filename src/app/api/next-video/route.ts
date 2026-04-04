@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         // Uses a single efficient query with indexed columns
         const { data: nextVideo, error: nextErr } = await supabase
             .from('videos')
-            .select('id, title, video_url, thumbnail_url, topics:tags, domain, stage, learning_order, duration, category')
+            .select('id, title, video_url, thumbnail_url, tags:topics, domain, stage, learning_order, duration, category')
             .eq('is_published', true)
             .gt('learning_order', currentVideo.learning_order)
             .order('learning_order', { ascending: true })
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
                 title: nextVideo.title,
                 video_url: nextVideo.video_url,
                 thumbnail_url: nextVideo.thumbnail_url,
-                topics: nextVideo.topics || [],
+                topics: nextVideo.tags || [],
                 domain: nextVideo.domain,
                 stage: nextVideo.stage,
                 sequence_order: nextVideo.learning_order,

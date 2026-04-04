@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         // ─── 1. Fetch all published videos with curriculum data ───
         const { data: allVideosRaw, error: videosErr } = await supabase
             .from('videos')
-            .select('id, title, domain, stage, learning_order, tags')
+            .select('id, title, domain, stage, learning_order, tags:topics')
             .eq('is_published', true)
             .not('domain', 'is', null)
 

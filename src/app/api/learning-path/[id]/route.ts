@@ -60,7 +60,7 @@ export async function GET(
                     thumbnail_url,
                     category,
                     difficulty,
-                    tags,
+                    topics,
                     duration,
                     is_published
                 )
@@ -89,7 +89,7 @@ export async function GET(
                     thumbnail_url: v.thumbnail_url,
                     category: v.category,
                     difficulty: v.difficulty,
-                    topics: v.tags,          // map tags → topics for UI
+                    topics: v.topics,          // DB column is topics
                     duration: v.duration,
                     order: entry.order_index,
                 }
